@@ -21,7 +21,7 @@
 # https://github.com/metagriffin/globre
 # it is distributed under the GNU General Public License,
 # version 3, or (at your option) any later version.
-# See LICENSE and/or http://www.gnu.org/licenses/ for details.
+# See COPYING and/or http://www.gnu.org/licenses/ for details.
 # The authors of this program make no copyright claim upon MathJax itself.
 
 import binascii
