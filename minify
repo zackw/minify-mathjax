@@ -227,7 +227,7 @@ def take_git_blob_sha1(fname):
     return h.digest()
 
 def scan_old_output(path):
-    logging.info("Scanning existing output directory %r" % (path,))
+    logging.info("Scanning output directory %r" % (path,))
     tree = {}
     for subdir, dirnames, filenames in os.walk(path):
         # Git does not track directories, so neither do we.
@@ -365,8 +365,10 @@ def selective_copy_and_prune(src, dst, stree, dtree, patterns, compression):
         if compression:
             for fname in filenames:
                 fullname = os.path.join(subdir, fname)
-                relname = os.path.relpath(dst, fullname)
-                if relname in new_dtree:
+                relname = os.path.relpath(fullname, dst)
+                if relname in new_dtree and \
+                   (relname not in dtree or dtree[relname] != stree[relname]):
+                    logging.info("Considering %r for compression" % (relname,))
                     maybe_compress(fullname)
 
     for edir in empty_dirs:
