@@ -2,7 +2,9 @@
 
 The official MathJax distribution is huge and contains a great deal of
 junk you may not need.  If you want to host it yourself, as you should,
-you may want to strip out all that junk.  This program does that.
+you may want to strip out all that junk.  This program does that.  The
+example configuration produces a 14MB output directory from a 176MB
+upstream checkout (not counting `.git`).
 
 `minify` expects to be run, with no arguments, in a directory
 containing a configuration file `minify.cfg`---such as a clean
