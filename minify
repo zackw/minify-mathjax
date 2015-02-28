@@ -29,6 +29,7 @@ import configparser
 import gzip
 import hashlib
 import io
+import logging
 import os
 import shutil
 import subprocess
@@ -40,27 +41,29 @@ def fileLineIter(inputFile,
                  inputNewline="\n",
                  outputNewline=None,
                  readSize=8192):
-   """Like the normal file iter but you can set what string indicates newline.
+    """Like the normal file iter but you can set what string indicates
+    newline.
 
-   The newline string can be arbitrarily long; it need not be restricted to a
-   single character. You can also set the read size and control whether or not
-   the newline string is left on the end of the iterated lines.  Setting
-   newline to '\0' is particularly good for use with an input file created with
-   something like "os.popen('find -print0')".
-   """
-   if outputNewline is None: outputNewline = inputNewline
-   if isinstance(inputNewline, bytes):
-       partialLine = b''
+    The newline string can be arbitrarily long; it need not be
+    restricted to a single character. You can also set the read size
+    and control whether or not the newline string is left on the end of
+    the iterated lines.  Setting newline to '\0' is particularly good
+    for use with an input file created with something like
+    "os.popen('find -print0')".
+    """
+    if outputNewline is None: outputNewline = inputNewline
+    if isinstance(inputNewline, bytes):
+        partialLine = b''
     else:
-       partialLine = ''
-   while True:
-       charsJustRead = inputFile.read(readSize)
-       if not charsJustRead: break
-       partialLine += charsJustRead
-       lines = partialLine.split(inputNewline)
-       partialLine = lines.pop()
-       for line in lines: yield line + outputNewline
-   if partialLine: yield partialLine
+        partialLine = ''
+    while True:
+        charsJustRead = inputFile.read(readSize)
+        if not charsJustRead: break
+        partialLine += charsJustRead
+        lines = partialLine.split(inputNewline)
+        partialLine = lines.pop()
+        for line in lines: yield line + outputNewline
+    if partialLine: yield partialLine
 
 # Glob-to-regex compiler from https://github.com/metagriffin/globre
 # modified with ability to compile a *list* of globs into a single
@@ -68,130 +71,130 @@ def fileLineIter(inputFile,
 # and the ability to inline regexps has been removed.
 
 class Tokenizer:
-  LITERAL  = 'literal'    # abcdef...
-  SINGLE   = 'single'     # ?
-  MULTIPLE = 'multiple'   # *
-  ANY      = 'any'        # **
-  RANGE    = 'range'      # [...]
-  submap   = {
-    '[' : (']', RANGE),
+    LITERAL  = 'literal'    # abcdef...
+    SINGLE   = 'single'     # ?
+    MULTIPLE = 'multiple'   # *
+    ANY      = 'any'        # **
+    RANGE    = 'range'      # [...]
+    submap   = {
+        '[' : (']', RANGE),
     }
 
-  def __init__(self, source):
-    self.source = source
-    self.pos    = 0
+    def __init__(self, source):
+        self.source = source
+        self.pos    = 0
 
-  def tokens(self):
-    '''
-    Generates four-element tuples of: (type, value, start, end).
-    '''
-    for token in self._outer():
-      yield token
+    def tokens(self):
+        '''
+        Generates four-element tuples of: (type, value, start, end).
+        '''
+        for token in self._outer():
+            yield token
 
-  def _outer(self):
-    start = self.pos
-    value = ''
-    while self.pos < len(self.source):
-      cur = self.source[self.pos]
-      if cur not in '\\?*[{':
-        value += cur
-        self.pos += 1
-        continue
-      if cur == '\\':
-        self.pos += 1
-        if self.pos >= len(self.source):
-          raise ValueError('dangling backslash "\\" in glob: ' + self.source)
-        value += self.source[self.pos]
-        self.pos += 1
-        continue
-      if len(value) > 0:
-        yield (self.LITERAL, value, start, self.pos)
-      self.pos += 1
-      value = ''
-      start = self.pos
-      if cur == '?':
-        yield (self.SINGLE, '?', start - 1, start)
-        continue
-      if cur == '*':
-        if self.pos >= len(self.source) or self.source[self.pos] != '*':
-          yield (self.MULTIPLE, '*', start - 1, start)
-          continue
-        yield (self.ANY, '**', start - 1, start + 1)
-        self.pos += 1
+    def _outer(self):
         start = self.pos
-        continue
-      if cur in self.submap:
-        spec = self.submap[cur]
-        value = self._scan(spec[0])
-        if len(value) > 0:
-          yield (spec[1], value, start - 1, self.pos)
         value = ''
-        start = self.pos
-        continue
-      raise ValueError('unexpected glob character "%s" in glob: %s'
-                       % (cur, self.source))
-    if len(value) > 0:
-      yield (self.LITERAL, value, start, self.pos)
+        while self.pos < len(self.source):
+            cur = self.source[self.pos]
+            if cur not in '\\?*[{':
+                value += cur
+                self.pos += 1
+                continue
+            if cur == '\\':
+                self.pos += 1
+                if self.pos >= len(self.source):
+                    raise ValueError('dangling backslash in glob: ' +
+                                     self.source)
+                value += self.source[self.pos]
+                self.pos += 1
+                continue
+            if len(value) > 0:
+                yield (self.LITERAL, value, start, self.pos)
+            self.pos += 1
+            value = ''
+            start = self.pos
+            if cur == '?':
+                yield (self.SINGLE, '?', start - 1, start)
+                continue
+            if cur == '*':
+                if self.pos >= len(self.source) or \
+                   self.source[self.pos] != '*':
+                    yield (self.MULTIPLE, '*', start - 1, start)
+                    continue
+                yield (self.ANY, '**', start - 1, start + 1)
+                self.pos += 1
+                start = self.pos
+                continue
+            if cur in self.submap:
+                spec = self.submap[cur]
+                value = self._scan(spec[0])
+                if len(value) > 0:
+                    yield (spec[1], value, start - 1, self.pos)
+                value = ''
+                start = self.pos
+                continue
+            raise ValueError('unexpected glob character "%s" in glob: %s'
+                             % (cur, self.source))
 
-  def _scan(self, target):
-    value = ''
-    while self.pos < len(self.source):
-      cur = self.source[self.pos]
-      self.pos += 1
-      if cur == '\\':
-        if self.pos >= len(self.source):
-          raise ValueError('dangling backslash "\\" in glob: ' + self.source)
-        value += self.source[self.pos]
-        self.pos += 1
-        continue
-      if cur == target:
-        return value
-      value += cur
-    raise ValueError('no terminating "%s" in glob: %s' % (target, self.source))
+        if len(value) > 0:
+            yield (self.LITERAL, value, start, self.pos)
+
+    def _scan(self, target):
+        value = ''
+        while self.pos < len(self.source):
+            cur = self.source[self.pos]
+            self.pos += 1
+            if cur == '\\':
+                if self.pos >= len(self.source):
+                    raise ValueError('dangling backslash "\\" in glob: ' +
+                                     self.source)
+                value += self.source[self.pos]
+                self.pos += 1
+                continue
+            if cur == target:
+                return value
+            value += cur
+        raise ValueError('no terminating "%s" in glob: %s' %
+                         (target, self.source))
 
 WILDCHARS = '?*[\\'
 
-#------------------------------------------------------------------------------
 def iswild(pattern):
-  for token in Tokenizer(pattern).tokens():
-    if token[0] != Tokenizer.LITERAL:
-      return True
-  return False
+    for token in Tokenizer(pattern).tokens():
+      if token[0] != Tokenizer.LITERAL:
+          return True
+    return False
 
-#------------------------------------------------------------------------------
 def glob2re(pattern):
-  '''
-  Converts a glob-matching pattern (using Apache Cocoon style rules)
-  to a regular expression, which basically means that the following
-  characters have special meanings:
+    '''
+    Converts a glob-matching pattern (using Apache Cocoon style rules)
+    to a regular expression, which basically means that the following
+    characters have special meanings:
 
-  * ``?``:     matches any single character excluding slash ('/')
-  * ``*``:     matches zero or more characters excluding slash
-  * ``**``:    matches zero or more characters including slash
-  * ``\``:     escape character used to precede any of the others for a literal
-  * ``[...]``: matches any character in the specified regex-style range
-  '''
+    * ``?``:     matches any single character excluding slash ('/')
+    * ``*``:     matches zero or more characters excluding slash
+    * ``**``:    matches zero or more characters including slash
+    * ``\``:     escape the next character
+    * ``[...]``: matches any character in the specified regex-style range
+    '''
 
-  prefix = None
-  expr   = ''
+    expr   = ''
 
-  for token in Tokenizer(pattern).tokens():
-    if split_prefix and expr == '':
-      prefix = token[1] if token[0] == Tokenizer.LITERAL else ''
-    if token[0] == Tokenizer.LITERAL:
-      expr += re.escape(token[1])
-    elif token[0] == Tokenizer.SINGLE:
-      expr += '[^/]'
-    elif token[0] == Tokenizer.MULTIPLE:
-      expr += '[^/]*?'
-    elif token[0] == Tokenizer.ANY:
-      expr += '.*?'
-    elif token[0] == Tokenizer.RANGE:
-      expr += '[' + token[1] + ']'
-    else:
-      ValueError('unexpected token %r from globre.Tokenizer for glob: %s'
-                 % (token, pattern))
-  return expr
+    for token in Tokenizer(pattern).tokens():
+        if token[0] == Tokenizer.LITERAL:
+            expr += re.escape(token[1])
+        elif token[0] == Tokenizer.SINGLE:
+            expr += '[^/]'
+        elif token[0] == Tokenizer.MULTIPLE:
+            expr += '[^/]*?'
+        elif token[0] == Tokenizer.ANY:
+            expr += '.*?'
+        elif token[0] == Tokenizer.RANGE:
+            expr += '[' + token[1] + ']'
+        else:
+            raise ValueError('unexpected token %r from Tokenizer for glob: %s'
+                             % (token, pattern))
+    return expr
 
 def globs2re(patterns):
     '''
@@ -213,12 +216,30 @@ def globs2re(patterns):
 # end of third-party code
 #
 
-def git_commit_hash(path):
-    return subprocess.check_output([
-        "git", "show", "-s", "--format=%H", "HEAD"
-    ], cwd=path).decode("ascii").strip()
+# The hashes printed by 'git ls-tree' are the SHA1 hash of a prefix
+# plus the file data.
+def take_git_blob_sha1(fname):
+    with open(fname, "rb") as f:
+        data = f.read()
+    h = hashlib.sha1()
+    h.update(("blob %u\0" % (len(data),)).encode("ascii"))
+    h.update(data)
+    return h.digest()
+
+def scan_old_output(path):
+    logging.info("Scanning existing output directory %r" % (path,))
+    tree = {}
+    for subdir, dirnames, filenames in os.walk(path):
+        # Git does not track directories, so neither do we.
+        for fname in filenames:
+            fullname = os.path.join(subdir, fname)
+            relname = os.path.relpath(fullname, path)
+            tree[relname] = take_git_blob_sha1(fullname)
+
+    return tree
 
 def scan_git_checkout(path):
+    logging.info("Scanning git checkout %r" % (path,))
     tree = {}
     lstree = None
     try:
@@ -227,8 +248,10 @@ def scan_git_checkout(path):
         ], cwd=path, stdout=subprocess.PIPE)
 
         for line in fileLineIter(lstree.stdout, b"\0", b""):
-            _, _, filehash, filename = line.decode("utf-8").split(maxsplit=3)
-            tree[filename] = binascii.unhexlify(filehash)
+            _, what, filehash, filename = \
+                    line.decode("utf-8").split(maxsplit=3)
+            if what == 'blob':
+                tree[filename] = binascii.unhexlify(filehash)
 
     except:
         if lstree:
@@ -242,43 +265,32 @@ def scan_git_checkout(path):
 
     return tree
 
+def git_commit_hash(path):
+    return subprocess.check_output([
+        "git", "show", "-s", "--format=%H", "HEAD"
+    ], cwd=path).decode("ascii").strip()
+
+
 def create_git_checkout(path, remote, branch):
+    logging.info("Creating git checkout %r from %r (branch %r)"
+                 % (path, remote, branch))
     subprocess.check_call([
         "git", "clone", "-b", branch, "--single-branch", remote, path])
 
-def scan_old_output(path):
-    def take_sha1(fname):
-        h = hashlib.sha1()
-        with open(fname, "rb") as f:
-            while True:
-                blk = f.read(8192)
-                if not blk: break
-                h.update(blk)
-        return h.digest()
+def update_git_checkout(path, remote, branch):
+    # FIXME implement jumping to another branch or remote.
+    # FIXME does not handle changes or local commits.
+    logging.info("Updating git checkout %r from %r (branch %r)"
+                 % (path, remote, branch))
+    subprocess.check_call(["git", "pull", "--ff-only"])
 
-    tree = {}
-    for subdir, dirnames, filenames in os.walk(path):
-        # Git does not track directories, so neither do we.
-        for fname in filenames:
-            relname = os.path.join(subdir, fname)
-            fullname = os.path.join(path, relname)
-            tree[relname] = take_sha1(fullname)
-
-    return tree
-
-def select_paths(tree, matcher):
-    pruned = {}
-    for path, fhash in tree.items():
-        if matcher.match(path):
-            pruned[path] = fhash
-
-    return pruned
 
 # These are filled in from the config file, below.
 NO_COMPRESS_EXTENSIONS = set()
 COMPRESSION_THRESHOLD  = 1
 
 def maybe_compress(path):
+    global NO_COMPRESS_EXTENSIONS, COMPRESSION_THRESHOLD
     # Compress PATH with gzip, if that is a sensible thing to do.
     _, ext = os.path.splitext(path)
     if ext in NO_COMPRESS_EXTENSIONS:
@@ -289,10 +301,14 @@ def maybe_compress(path):
             with gzip.GzipFile(fileobj=buf, mode="wb") as w:
                 while True:
                     chunk = f.read(8192)
+                    if not chunk: break
                     uncompressed_len += len(chunk)
                     w.write(chunk)
         compressed = buf.getbuffer()
+        logging.info("%r is %d bytes uncompressed, %d compressed"
+                     % (path, uncompressed_len, len(compressed)))
         if len(compressed) * COMPRESSION_THRESHOLD < uncompressed_len:
+            logging.info("Writing %r" % (path + ".gz",))
             with open(path + ".gz", "wb") as w:
                 w.write(compressed)
         del compressed
@@ -301,23 +317,42 @@ def selective_copy_and_prune(src, dst, stree, dtree, patterns, compression):
     matcher = globs2re(patterns)
 
     new_dtree = set()
-    for path, dhash in dtree.items():
+    for path, dhash in sorted(dtree.items()):
+        if path.endswith(".gz") and path not in stree:
+            # Previously compressed file; we want to preserve it if
+            # we're preserving the uncompressed version, but not put
+            # it in new_dtree (which would cause us to waste time
+            # considering it for compression again).
+            unc = path[:-3]
+            if unc not in stree or stree[unc] != dtree[unc] or \
+               not matcher.match(unc):
+                logging.info("Removing %r" % (path,))
+                os.remove(os.path.join(dst, path))
+            continue
+
         if path not in stree or not matcher.match(path):
+            logging.info("Removing %r" % (path,))
             os.remove(os.path.join(dst, path))
         else:
             shash = stree[path]
             new_dtree.add(path)
             if shash != dhash:
                 # File changed, directory already known to exist.
+                logging.info("Updating %r (was %r now %r)"
+                             % (path,
+                                binascii.hexlify(shash),
+                                binascii.hexlify(dhash)))
                 shutil.copy2(os.path.join(src, path),
                              os.path.join(dst, path))
 
-    for path, shash in stree.items():
+    for path, shash in sorted(stree.items()):
         if path in new_dtree or not matcher.match(path):
             continue
         # New file, directory not known to exist.
+        logging.info("New file %r" % (path,))
         os.makedirs(os.path.join(dst, os.path.dirname(path)), exist_ok=True)
         shutil.copy2(os.path.join(src, path), os.path.join(dst, path))
+        new_dtree.add(path)
 
     # Remove all empty directories, and (if enabled) compress files.
     # ??? This might be more efficiently doable with os.walk(topdown=False),
@@ -329,7 +364,103 @@ def selective_copy_and_prune(src, dst, stree, dtree, patterns, compression):
             empty_dirs.add(subdir)
         if compression:
             for fname in filenames:
-                maybe_compress(os.path.join(dst, subdir, fname))
+                fullname = os.path.join(subdir, fname)
+                relname = os.path.relpath(dst, fullname)
+                if relname in new_dtree:
+                    maybe_compress(fullname)
 
     for edir in empty_dirs:
-        os.removedirs(os.path.join(dst, edir)
+        logging.info("Removing empty directory %r" % (edir,))
+        os.removedirs(edir)
+
+def ensure_output_dir(stem, old_chash, new_chash):
+    stem += "."
+    if old_chash:
+        old_odir = stem + old_chash[:8]
+    new_odir = stem + new_chash[:8]
+    found_old_odir = False
+    for name in os.listdir("."):
+        if not name.startswith(stem):
+            continue
+        if name == old_odir:
+            found_old_odir = True
+        else:
+            logging.info("Deleting %r" % (name,))
+            shutil.rmtree(name)
+
+    if found_old_odir:
+        if old_odir == new_odir:
+            logging.info("Output directory %r already exists" % (old_odir,))
+        else:
+            logging.info("Renaming %r to %r" % (old_odir, new_odir))
+            os.rename(old_odir, new_odir)
+    else:
+        logging.info("Creating %r" % (new_odir,))
+        os.mkdir(new_odir)
+
+    return new_odir
+
+class Configuration:
+    def __init__(self, cfgpath):
+        parser = configparser.ConfigParser(
+            allow_no_value          = True,
+            empty_lines_in_values   = False,
+            interpolation           = None,
+            strict                  = True,
+            default_section         = None,
+            delimiters              = ('=',),
+            comment_prefixes        = ('#',),
+            inline_comment_prefixes = ('#',))
+        parser.optionxform = lambda x: x
+
+        with open(cfgpath, "r") as f:
+            parser.read_file(f)
+
+        general = parser["GENERAL"]
+
+        if general.getboolean("verbose", fallback=False):
+            logging.basicConfig(level=logging.INFO,
+                                format="%(levelname)s: %(message)s")
+        else:
+            logging.basicConfig(format="%(levelname)s: %(message)s")
+
+        self.git_repo    = general["git_repo"]
+        self.git_branch  = general["git_branch"]
+
+        self.compression = general.getboolean("compression")
+        self.do_not_compress = set(general["do_not_compress"].split())
+        self.c_threshold = general["compression_threshold"]
+        if self.c_threshold.endswith("%"):
+            self.c_threshold = float(self.c_threshold[:-1]) / 100
+        else:
+            self.c_threshold = float(self.c_threshold)
+
+        self.patterns = list(parser["FILES"].keys())
+
+def main():
+    cfg = Configuration("minify.cfg")
+
+    global NO_COMPRESS_EXTENSIONS, COMPRESSION_THRESHOLD
+    NO_COMPRESS_EXTENSIONS = cfg.do_not_compress
+    COMPRESSION_THRESHOLD = cfg.c_threshold
+
+    if os.path.isdir("MathJax"):
+        old_chash = git_commit_hash("MathJax")
+        update_git_checkout("MathJax", cfg.git_repo, cfg.git_branch)
+        new_chash = git_commit_hash("MathJax")
+    else:
+        old_chash = None
+        create_git_checkout("MathJax", cfg.git_repo, cfg.git_branch)
+        new_chash = git_commit_hash("MathJax")
+
+    output_dir = ensure_output_dir("MathJax", old_chash, new_chash)
+    dtree = scan_old_output(output_dir)
+    stree = scan_git_checkout("MathJax")
+
+    selective_copy_and_prune("MathJax", output_dir,
+                             stree, dtree,
+                             cfg.patterns, cfg.compression)
+
+    sys.stdout.write(output_dir + "\n")
+
+main()
