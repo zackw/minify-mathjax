@@ -275,14 +275,15 @@ def create_git_checkout(path, remote, branch):
     logging.info("Creating git checkout %r from %r (branch %r)"
                  % (path, remote, branch))
     subprocess.check_call([
-        "git", "clone", "-b", branch, "--single-branch", remote, path])
+        "git", "clone", "--quiet",
+        "-b", branch, "--single-branch", remote, path])
 
 def update_git_checkout(path, remote, branch):
     # FIXME implement jumping to another branch or remote.
     # FIXME does not handle changes or local commits.
     logging.info("Updating git checkout %r from %r (branch %r)"
                  % (path, remote, branch))
-    subprocess.check_call(["git", "pull", "--ff-only"])
+    subprocess.check_call(["git", "pull", "--quiet", "--ff-only"])
 
 
 # These are filled in from the config file, below.
